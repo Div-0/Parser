@@ -6,9 +6,6 @@ import pymorphy2
 import nltk
 from nltk.corpus import stopwords
 import threading
-from queue import Queue
-import time
-queue = Queue()
 LOCK = threading.RLock()
 nltk.download('stopwords')
 en_stops = set(stopwords.words('english'))
@@ -26,21 +23,6 @@ Page_quantity = []
 Page_id = [1]
 Word_id = [1]
 l_allowed = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюяabcdefghigklmnopqrstuvwxyz'
-
-
-def worker(path, host, domain):
-    while True:
-        try:
-            url = queue.get_nowait()
-        except:
-            return
-        for page in Pages:
-            if url == page['url']:
-                url = page
-                break
-        print(f'Обработка {url["url"]} {url["id"]} страницы из {len(Pages)}')
-        add_page_info(url, host, domain)
-        save_file(path)
 
 
 def get_html(url):
@@ -88,7 +70,6 @@ def add_all_links_recursive(url, host, domain, max_depth=0):
                                 'title': 'No title',
                                 'description': 'No description',
                             })
-                            queue.put(link)
                             Page_id.insert(0, Page_id[0] + 1)
                             links_to_handle_recursive.append(link)
         except:
@@ -101,7 +82,6 @@ def add_all_links_recursive(url, host, domain, max_depth=0):
 
 
 def add_page_info(page, host, domain):
-    LOCK.acquire()
     html = get_html(page['url'])
     if html:
         try:
@@ -215,11 +195,9 @@ def add_page_info(page, host, domain):
                                 })
                             Word_id.insert(0, Word_id[0] + 1)
         except: pass
-    LOCK.release()
 
 
 def save_file(path):
-    LOCK.acquire()
     try:
         with open(path, 'w', newline='') as file:
             writer = csv.writer(file, delimiter=';')
@@ -274,7 +252,6 @@ def parse():
         print(f'Получено {len(Pages)} страниц')
         print(f'Обработка {Pages[0]["url"]} 1 страницы из 1')
         add_page_info(Pages[0], host, domain)
-        save_file(file)
 
     else:
         threads_count = int(input('Введите количество потоков обработки сайта: '))
@@ -285,18 +262,32 @@ def parse():
             'title': 'No title',
             'description': 'No description',
         })
-        queue.put(host + domain + '/')
         Page_id.insert(0, Page_id[0] + 1)
         add_all_links_recursive(host + domain, host, domain)
         print(f'Получено {len(Pages)} страниц')
+        if threads_count > len(Pages):
+            threads_count = input(f'Число потоков должно быть меньше {len(Pages)}: ')
         print('Запуск потоков...')
-        for _ in range(threads_count):
-            thread_ = threading.Thread(target=worker(file, host, domain))
-            thread_.start()
+        thread_list = []
+        for page in range(0, len(Pages), threads_count):
+            if (threads_count + page) < len(Pages):
+                for i in range(threads_count):
+                    t = threading.Thread(target=add_page_info, args=(Pages[page + i], host, domain))
+                    thread_list.append(t)
+                    print(f'обработка {Pages[page + i]["url"]} {Pages[page + i]["id"]} страница из {len(Pages)}')
+                    t.start()
+                for t in thread_list:
+                    t.join()
+                thread_list.clear()
 
-    print('success')
+        remaining = len(Pages) - (len(Pages) % threads_count)
+        for i in range(remaining, len(Pages)):
+            print(f'обработка {Pages[i]["url"]} {Pages[i]["id"]} страница из {len(Pages)}')
+            add_page_info(Pages[i], host, domain)
 
     save_file(file)
+
+    print('success')
 
 
 parse()
