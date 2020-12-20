@@ -6,7 +6,6 @@ import pymorphy2
 import nltk
 from nltk.corpus import stopwords
 import threading
-LOCK = threading.RLock()
 nltk.download('stopwords')
 en_stops = set(stopwords.words('english'))
 morph = pymorphy2.MorphAnalyzer()
@@ -150,6 +149,7 @@ def add_page_info(page, host, domain):
                                         Word_id.insert(0, Word_id[0] + 1)
                         except: pass
                 tag_a.decompose()
+
             body = soup.find('body')
             if body:
                 text = body.get_text()
@@ -279,7 +279,6 @@ def parse():
                 for t in thread_list:
                     t.join()
                 thread_list.clear()
-
         remaining = len(Pages) - (len(Pages) % threads_count)
         for i in range(remaining, len(Pages)):
             print(f'обработка {Pages[i]["url"]} {Pages[i]["id"]} страница из {len(Pages)}')
