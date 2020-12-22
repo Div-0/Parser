@@ -8,6 +8,7 @@ from nltk.corpus import stopwords
 import threading
 from queue import Queue
 queue = Queue()
+LOCK = threading.RLock()
 nltk.download('stopwords')
 en_stops = set(stopwords.words('english'))
 morph = pymorphy2.MorphAnalyzer()
@@ -28,6 +29,7 @@ Thread_list = []
 
 
 def pages_append(url, title, description):
+    LOCK.acquire()
     Pages.append({
         'id': Page_id[0],
         'url': url,
@@ -35,9 +37,11 @@ def pages_append(url, title, description):
         'description': description,
     })
     Page_id.insert(0, Page_id[0] + 1)
+    LOCK.release()
 
 
 def quantity_append(word, page, domain):
+    LOCK.acquire()
     flag = 0
     for d_word in Domain_quantity:
         if word == d_word['word']:
@@ -61,9 +65,11 @@ def quantity_append(word, page, domain):
             'word': word,
             'quantity': 1,
         })
+    LOCK.release()
 
 
 def words_append(word, page, domain):
+    LOCK.acquire()
     flag = 1
     for letter in word:
         if letter not in l_allowed:
@@ -77,22 +83,27 @@ def words_append(word, page, domain):
                 'word': word,
             })
         quantity_append(word, page, domain)
-    Word_id.insert(0, Word_id[0] + 1)
+        Word_id.insert(0, Word_id[0] + 1)
+    LOCK.release()
     return flag
 
 
 def page_word_append(page_id, word_id):
+    LOCK.acquire()
     Page_Word.append({
         'page id': page_id,
         'word id': word_id,
     })
+    LOCK.release()
 
 
 def link_word_page_append(page_id, word_id):
+    LOCK.acquire()
     Link_Word_Page.append({
         'page id': page_id,
         'word id': word_id,
     })
+    LOCK.release()
 
 
 def thread_start(target, args):
@@ -136,7 +147,7 @@ def check_link_to_replay(link):
     return flag
 
 
-def add_all_links_recursive(url, host, domain, threads_count=1, max_depth=0):
+def add_all_links(url, host, domain, threads_count=1, max_depth=0):
     soup = get_html(url)
     if soup:
         for tag_a in soup.find_all('a', href=True):
@@ -152,11 +163,11 @@ def add_all_links_recursive(url, host, domain, threads_count=1, max_depth=0):
             thread_limit()
             for i in range(threads_count):
                 target_link = queue.get_nowait()
-                thread_start(target=add_all_links_recursive, args=(target_link, host, domain, threads_count, 0))
+                thread_start(target=add_all_links, args=(target_link, host, domain, threads_count, 0))
         while queue.qsize():
             thread_limit()
             target_link = queue.get_nowait()
-            thread_start(target=add_all_links_recursive, args=(target_link, host, domain, threads_count, 0))
+            thread_start(target=add_all_links, args=(target_link, host, domain, threads_count, 0))
 
 
 def add_title_description(soup, page):
@@ -175,7 +186,7 @@ def add_page_info(page, host, domain):
         for tag_a in soup.find_all('a', href=True):
             link = tag_a.get('href')
             link = absolute_link(link, host, domain)
-            if urlparse(link).netloc == domain and check_link_to_replay(link):
+            if urlparse(link).netloc == domain:
                 link_page_id = 0
                 for element in Pages:
                     if element['url'] == link:
@@ -184,10 +195,12 @@ def add_page_info(page, host, domain):
                 link_sentence = tag_a.get_text()
                 link_words = link_sentence.split()
                 for word in link_words:
+                    LOCK.acquire()
                     word = words_append(word, page, domain)
                     if word:
                         page_word_append(page['id'], Word_id[0])
                         link_word_page_append(link_page_id, Word_id[0])
+                    LOCK.release()
             tag_a.decompose()
 
         body = soup.find('body')
@@ -203,9 +216,11 @@ def add_page_info(page, host, domain):
                 if flag == 0:
                     word = morph.parse(word)[0].normal_form
                     if word not in en_stops:
+                        LOCK.acquire()
                         word = words_append(word, page, domain)
                         if word:
                             page_word_append(page['id'], Word_id[0])
+                        LOCK.release()
 
 
 def save_file(path):
@@ -263,7 +278,7 @@ def main():
     if user_info['deep'] == '0':
         print('please wait...')
         pages_append(user_info['url'], 'No title', 'No description')
-        add_all_links_recursive(user_info['url'], user_info['host'], user_info['domain'], max_depth=0)
+        add_all_links(user_info['url'], user_info['host'], user_info['domain'], max_depth=0)
         print(f'Получено {len(Pages)} страниц')
 
         print(f'Обработка {user_info["url"]} 1 страницы из 1')
@@ -272,10 +287,8 @@ def main():
     else:
         print('please wait...')
         pages_append(user_info['host'] + user_info['domain'] + '/', 'No title', 'No description')
-        add_all_links_recursive(user_info['host'] + user_info['domain'], user_info['host'], user_info['domain'], user_info['threads_count'], max_depth=1)
-        for t in Thread_list:
-            t.join()
-        Thread_list.clear()
+        add_all_links(user_info['host'] + user_info['domain'], user_info['host'], user_info['domain'], user_info['threads_count'], max_depth=0)
+        thread_limit()
         print(f'Получено {len(Pages)} страниц')
 
         if user_info['threads_count'] > len(Pages):
