@@ -287,7 +287,7 @@ def main():
     else:
         print('please wait...')
         pages_append(user_info['host'] + user_info['domain'] + '/', 'No title', 'No description')
-        add_all_links(user_info['host'] + user_info['domain'], user_info['host'], user_info['domain'], user_info['threads_count'], max_depth=0)
+        add_all_links(user_info['host'] + user_info['domain'], user_info['host'], user_info['domain'], user_info['threads_count'], max_depth=1)
         thread_limit()
         print(f'Получено {len(Pages)} страниц')
 
